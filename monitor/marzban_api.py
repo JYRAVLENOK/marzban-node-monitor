@@ -33,7 +33,7 @@ class MarzbanAPI:
             expiry = self.redis.get(self.token_expiry_key)
 
             if token and expiry and time.time() < float(expiry):
-                logging.info(f"Using cached access token: {token.decode('utf-8')}")
+                logging.debug(f"Using cached access token: {token.decode('utf-8')}")
                 return token.decode('utf-8')
             else:
                 return self.authenticate()
@@ -64,7 +64,7 @@ class MarzbanAPI:
                 self.token_expiry_key, time.time() + expires_in, ex=expires_in
             )
 
-            logging.info(
+            logging.debug(
                 f"Authenticated successfully. New access token: {self.auth_token}"
             )
             return self.auth_token

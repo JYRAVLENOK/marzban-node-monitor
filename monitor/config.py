@@ -17,8 +17,8 @@ class Config:
     TELEGRAM_LOGS = os.getenv("TELEGRAM_LOGS", "true").strip()
     TELEGRAM_LOGS = True if TELEGRAM_LOGS.lower() == "true" else False
     REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "PASSWORD").strip()
-    LOG_LEVEL = os.getenv("LOG_LEVEL", "DEFAULT").strip().upper()
-    VALID_LOG_LEVELS = {"DEBUG", "INFO"}
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper()
+    VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
 
     if LOG_LEVEL not in VALID_LOG_LEVELS:
         LOG_LEVEL = "INFO"

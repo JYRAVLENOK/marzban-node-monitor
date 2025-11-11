@@ -36,12 +36,12 @@ class NodeMonitor:
         return f"{self.node_disconnect_time_prefix}{node_id}"
 
     def log_node_info(self, node):
-        logging.info(f"--- Узел: {node.get('name', 'Неизвестный узел')} ---")
-        logging.info(f"ID: {node.get('id', 'Неизвестно')}")
-        logging.info(f"Адрес: {node.get('address', 'IP не указан')}")
-        logging.info(f"Порт: {node.get('port', 'Неизвестно')}")
-        logging.info(f"Статус: {node.get('status', 'Неизвестно')}")
-        logging.info(f"Сообщение: {node.get('message', 'Ошибка не указана')}")
+        logging.debug(f"--- Узел: {node.get('name', 'Неизвестный узел')} ---")
+        logging.debug(f"ID: {node.get('id', 'Неизвестно')}")
+        logging.debug(f"Адрес: {node.get('address', 'IP не указан')}")
+        logging.debug(f"Порт: {node.get('port', 'Неизвестно')}")
+        logging.debug(f"Статус: {node.get('status', 'Неизвестно')}")
+        logging.debug(f"Сообщение: {node.get('message', 'Ошибка не указана')}")
 
     def monitor(self):
         self.notifier.send_message(
@@ -50,14 +50,14 @@ class NodeMonitor:
         )
         while True:
             try:
-                logging.info("Начало мониторинга узлов...")
+                logging.debug("Начало мониторинга узлов...")
                 start_time = time.time()
 
                 try:
                     nodes = self.api.get_nodes()
                     elapsed_time = time.time() - start_time
-                    logging.info(f"Запрос узлов выполнен за {elapsed_time:.2f} секунд")
-                    logging.info(f"Получено {len(nodes)} узлов для мониторинга.")
+                    logging.debug(f"Запрос узлов выполнен за {elapsed_time:.2f} секунд")
+                    logging.debug(f"Получено {len(nodes)} узлов для мониторинга.")
                 except TimeoutError:
                     logging.error("Timeout while retrieving nodes")
                     self.notifier.send_message(
@@ -109,7 +109,7 @@ class NodeMonitor:
                         continue
 
                     current_status = node_status.get("status", "unknown")
-                    logging.info(f"Статус узла {node_name}: {current_status}")
+                    logging.debug(f"Статус узла {node_name}: {current_status}")
 
                     # Если узел восстановился
                     if (
@@ -125,7 +125,7 @@ class NodeMonitor:
                             timestamp_reconnect = datetime.now().strftime(
                                 "%Y-%m-%d %H:%M:%S"
                             )
-                            logging.info(
+                            logging.warning(
                                 f"Узел {node_name} восстановлен через "
                                 f"{downtime_minutes} минут."
                             )
@@ -174,7 +174,7 @@ class NodeMonitor:
                                     timestamp_reconnect = datetime.now().strftime(
                                         "%Y-%m-%d %H:%M:%S"
                                     )
-                                    logging.info(
+                                    logging.warning(
                                         f"Узел {node_name} успешно переподключен в "
                                         f"{timestamp_reconnect} после {i + 1} попыток."
                                     )
