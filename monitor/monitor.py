@@ -22,18 +22,23 @@ class NodeMonitor:
         # Префиксы для ключей Redis
         self.node_status_key_prefix = "node_status:"
         self.node_disconnect_time_prefix = "node_disconnect_time:"
+        self.node_last_reconnect_prefix = "node_last_reconnect:"
 
         # Параметры задержек и попыток
-        self.sleep_interval = 30
+        self.sleep_interval = Config.MONITOR_INTERVAL_SECONDS
         self.reconnect_attempts = 3
         self.reconnect_delay = 5
         self.node_check_delay = 10
+        self.reconnect_throttle_seconds = Config.RECONNECT_THROTTLE_MINUTES * 60
 
     def get_node_status_key(self, node_id):
         return f"{self.node_status_key_prefix}{node_id}"
 
     def get_node_disconnect_time_key(self, node_id):
         return f"{self.node_disconnect_time_prefix}{node_id}"
+
+    def get_node_last_reconnect_key(self, node_id):
+        return f"{self.node_last_reconnect_prefix}{node_id}"
 
     def log_node_info(self, node):
         logging.debug(f"--- Узел: {node.get('name', 'Неизвестный узел')} ---")
@@ -111,6 +116,10 @@ class NodeMonitor:
                     current_status = node_status.get("status", "unknown")
                     logging.debug(f"Статус узла {node_name}: {current_status}")
 
+                    node_last_reconnect_key = self.get_node_last_reconnect_key(
+                        node_id
+                    )
+
                     # Если узел восстановился
                     if (
                         self.redis.get(node_redis_key) == b"disconnected"
@@ -163,20 +172,53 @@ class NodeMonitor:
                             )
                             self.redis.set(node_disconnect_time_key, time.time())
 
+                        # Троттлинг: не чаще чем раз в N минут
+                        last_reconnect = self.redis.get(node_last_reconnect_key)
+                        if last_reconnect is not None:
+                            elapsed = time.time() - float(last_reconnect)
+                            if elapsed < self.reconnect_throttle_seconds:
+                                wait_min = (
+                                    self.reconnect_throttle_seconds - elapsed
+                                ) / 60
+                                logging.debug(
+                                    f"Узел {node_name}: throttle, "
+                                    f"reconnect через {wait_min:.1f} мин"
+                                )
+                                continue
+
                         # Попытка переподключения
+                        reconnect_done = False
                         for i in range(self.reconnect_attempts):
                             try:
                                 self.api.reconnect_node(node_id)
+                                self.redis.set(
+                                    node_last_reconnect_key,
+                                    time.time(),
+                                    ex=self.reconnect_throttle_seconds * 2,
+                                )
                                 time.sleep(self.node_check_delay)
                                 node_status = self.api.get_node(node_id)
 
                                 if node_status["status"] == "connected":
-                                    timestamp_reconnect = datetime.now().strftime(
-                                        "%Y-%m-%d %H:%M:%S"
+                                    timestamp_reconnect = (
+                                        datetime.now().strftime(
+                                            "%Y-%m-%d %H:%M:%S"
+                                        )
                                     )
+                                    disconnect_time = self.redis.get(
+                                        node_disconnect_time_key
+                                    )
+                                    downtime_minutes = 0
+                                    if disconnect_time:
+                                        downtime_minutes = round(
+                                            (time.time() - float(disconnect_time))
+                                            / 60,
+                                            2,
+                                        )
                                     logging.warning(
-                                        f"Узел {node_name} успешно переподключен в "
-                                        f"{timestamp_reconnect} после {i + 1} попыток."
+                                        f"Узел {node_name} успешно "
+                                        f"переподключен в {timestamp_reconnect} "
+                                        f"после {i + 1} попыток."
                                     )
                                     self.notifier.send_message(
                                         Responses.get_message(
@@ -185,11 +227,13 @@ class NodeMonitor:
                                             node_ip=node_ip,
                                             timestamp=timestamp_reconnect,
                                             attempts=i + 1,
+                                            downtime_minutes=downtime_minutes,
                                         ),
                                         parse_mode="HTML",
                                     )
                                     self.redis.delete(node_redis_key)
                                     self.redis.delete(node_disconnect_time_key)
+                                    reconnect_done = True
                                     break
                             except Exception as e:
                                 logging.error(
@@ -197,8 +241,8 @@ class NodeMonitor:
                                 )
                                 time.sleep(self.reconnect_delay)
 
-                        else:
-                            # Если все попытки неудачны
+                        if not reconnect_done:
+                            # Все попытки неудачны
                             timestamp_failure = datetime.now().strftime(
                                 "%Y-%m-%d %H:%M:%S"
                             )

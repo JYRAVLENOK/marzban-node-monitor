@@ -23,6 +23,16 @@ class Config:
     if LOG_LEVEL not in VALID_LOG_LEVELS:
         LOG_LEVEL = "INFO"
 
+    # Интервал проверки нод (секунды)
+    MONITOR_INTERVAL_SECONDS = int(
+        os.getenv("MONITOR_INTERVAL_SECONDS", "30").strip()
+    )
+
+    # Защита от избыточных reconnect: не вызывать чаще чем раз в N минут
+    RECONNECT_THROTTLE_MINUTES = int(
+        os.getenv("RECONNECT_THROTTLE_MINUTES", "3").strip()
+    )
+
 
 class Responses:
     LANG = os.getenv("LANG", "ru")
