@@ -22,6 +22,7 @@ class NodeMonitor:
         # Префиксы для ключей Redis
         self.node_status_key_prefix = "node_status:"
         self.node_disconnect_time_prefix = "node_disconnect_time:"
+        self.node_consecutive_fail_prefix = "node_consecutive_fail:"
         self.node_last_reconnect_prefix = "node_last_reconnect:"
 
         # Параметры задержек и попыток
@@ -30,12 +31,18 @@ class NodeMonitor:
         self.reconnect_delay = 5
         self.node_check_delay = 10
         self.reconnect_throttle_seconds = Config.RECONNECT_THROTTLE_MINUTES * 60
+        self.consecutive_failures_before_reconnect = (
+            Config.CONSECUTIVE_FAILURES_BEFORE_RECONNECT
+        )
 
     def get_node_status_key(self, node_id):
         return f"{self.node_status_key_prefix}{node_id}"
 
     def get_node_disconnect_time_key(self, node_id):
         return f"{self.node_disconnect_time_prefix}{node_id}"
+
+    def get_node_consecutive_fail_key(self, node_id):
+        return f"{self.node_consecutive_fail_prefix}{node_id}"
 
     def get_node_last_reconnect_key(self, node_id):
         return f"{self.node_last_reconnect_prefix}{node_id}"
@@ -116,9 +123,20 @@ class NodeMonitor:
                     current_status = node_status.get("status", "unknown")
                     logging.debug(f"Статус узла {node_name}: {current_status}")
 
+                    node_consecutive_fail_key = self.get_node_consecutive_fail_key(
+                        node_id
+                    )
                     node_last_reconnect_key = self.get_node_last_reconnect_key(
                         node_id
                     )
+
+                    # Если узел подключен — сбрасываем счётчик неудачных проверок
+                    if current_status in ["connected", "disabled"]:
+                        if self.redis.get(node_consecutive_fail_key) is not None:
+                            self.redis.delete(node_consecutive_fail_key)
+                            logging.debug(
+                                f"Узел {node_name} online, сброс счётчика неудач"
+                            )
 
                     # Если узел восстановился
                     if (
@@ -153,10 +171,23 @@ class NodeMonitor:
 
                     # Если узел отключен
                     if current_status not in ["connected", "disabled"]:
+                        # Увеличиваем счётчик неудачных проверок подряд
+                        try:
+                            fail_count = int(
+                                self.redis.incr(node_consecutive_fail_key)
+                            )
+                        except (ValueError, TypeError):
+                            self.redis.set(node_consecutive_fail_key, 1)
+                            fail_count = 1
+                        self.redis.expire(
+                            node_consecutive_fail_key,
+                            self.reconnect_throttle_seconds * 2,
+                        )
+
                         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         logging.warning(
-                            f"Узел {node_name} ({node_ip}) отключен. "
-                            f"Попытка переподключения в {timestamp}..."
+                            f"Узел {node_name} ({node_ip}) отключен "
+                            f"(неудач подряд: {fail_count}). {timestamp}"
                         )
 
                         if self.redis.get(node_redis_key) != b"disconnected":
@@ -172,6 +203,15 @@ class NodeMonitor:
                             )
                             self.redis.set(node_disconnect_time_key, time.time())
 
+                        # Reconnect только после N неудач подряд (защита от ложных срабатываний)
+                        if fail_count < self.consecutive_failures_before_reconnect:
+                            logging.debug(
+                                f"Узел {node_name}: ждём "
+                                f"{self.consecutive_failures_before_reconnect - fail_count} "
+                                "неудач перед reconnect"
+                            )
+                            continue
+
                         # Троттлинг: не чаще чем раз в N минут
                         last_reconnect = self.redis.get(node_last_reconnect_key)
                         if last_reconnect is not None:
@@ -185,6 +225,23 @@ class NodeMonitor:
                                     f"reconnect через {wait_min:.1f} мин"
                                 )
                                 continue
+
+                        # Двойная проверка: нода могла восстановиться между проверками
+                        try:
+                            recheck = self.api.get_node(node_id)
+                            if recheck.get("status") == "connected":
+                                logging.info(
+                                    f"Узел {node_name} уже online, "
+                                    "reconnect не требуется"
+                                )
+                                self.redis.delete(node_consecutive_fail_key)
+                                self.redis.delete(node_redis_key)
+                                self.redis.delete(node_disconnect_time_key)
+                                continue
+                        except Exception as e:
+                            logging.warning(
+                                f"Повторная проверка узла {node_name}: {e}"
+                            )
 
                         # Попытка переподключения
                         reconnect_done = False
@@ -233,6 +290,7 @@ class NodeMonitor:
                                     )
                                     self.redis.delete(node_redis_key)
                                     self.redis.delete(node_disconnect_time_key)
+                                    self.redis.delete(node_consecutive_fail_key)
                                     reconnect_done = True
                                     break
                             except Exception as e:

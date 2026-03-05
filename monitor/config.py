@@ -32,6 +32,10 @@ class Config:
     RECONNECT_THROTTLE_MINUTES = int(
         os.getenv("RECONNECT_THROTTLE_MINUTES", "3").strip()
     )
+    # Сколько неудачных проверок подряд перед вызовом reconnect (защита от ложных срабатываний)
+    CONSECUTIVE_FAILURES_BEFORE_RECONNECT = int(
+        os.getenv("CONSECUTIVE_FAILURES_BEFORE_RECONNECT", "3").strip()
+    )
 
 
 class Responses:
