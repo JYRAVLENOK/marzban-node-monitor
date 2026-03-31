@@ -23,6 +23,13 @@ class Config:
     if LOG_LEVEL not in VALID_LOG_LEVELS:
         LOG_LEVEL = "INFO"
 
+    MONITOR_RECONNECT_ENABLED = (
+        os.getenv("MONITOR_RECONNECT_ENABLED", "true").strip().lower() == "true"
+    )
+    MONITOR_CONNECTING_STUCK_TIMEOUT = int(
+        os.getenv("MONITOR_CONNECTING_STUCK_TIMEOUT", "300").strip()
+    )
+
 
 class Responses:
     LANG = os.getenv("LANG", "ru")
@@ -95,6 +102,16 @@ class Responses:
                 "<b>Время:</b> {timestamp}\n"
                 "<code>----------------------------------------</code>\n\n"
             ),
+            "WARNING_NODE_CONNECTING_STUCK": (
+                "🟠 <b>[WARNING]</b>\n\n"
+                "<b>Узел:</b> <code>{node_name}</code>\n"
+                "<b>IP:</b> <code>{node_ip}</code>\n\n"
+                "<code>----------------------------------------</code>\n"
+                "<b>Статус:</b> <code>connecting</code>\n"
+                "<b>Длительность:</b> {duration_minutes} минут\n"
+                "<b>Время:</b> {timestamp}\n"
+                "<code>----------------------------------------</code>\n\n"
+            ),
         },
         "en": {
             "MONITOR_START": (
@@ -160,6 +177,16 @@ class Responses:
                 "<b>An error occurred during node monitoring.</b>\n\n"
                 "<code>----------------------------------------</code>\n"
                 "<b>Error:</b> <code>{error_message}</code>\n"
+                "<b>Time:</b> {timestamp}\n"
+                "<code>----------------------------------------</code>\n\n"
+            ),
+            "WARNING_NODE_CONNECTING_STUCK": (
+                "🟠 <b>[WARNING]</b>\n\n"
+                "<b>Node:</b> <code>{node_name}</code>\n"
+                "<b>IP:</b> <code>{node_ip}</code>\n\n"
+                "<code>----------------------------------------</code>\n"
+                "<b>Status:</b> <code>connecting</code>\n"
+                "<b>Duration:</b> {duration_minutes} minutes\n"
                 "<b>Time:</b> {timestamp}\n"
                 "<code>----------------------------------------</code>\n\n"
             ),
